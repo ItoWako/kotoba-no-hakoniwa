@@ -16,7 +16,9 @@ app.post('/api/tanka', async (req, res) => {
     const { word } = req.body;
 
     if (!word) {
-      return res.status(400).json({ error: 'word is required' });
+      return res.status(400).json({
+        error: 'word is required'
+      });
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -43,8 +45,11 @@ app.post('/api/tanka', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error(data);
-      return res.status(500).json({ error: 'Claude API error' });
+      console.error('Claude API error:', data);
+
+      return res.status(500).json({
+        error: 'Claude API error'
+      });
     }
 
     const text = data.content
@@ -53,12 +58,27 @@ app.post('/api/tanka', async (req, res) => {
       .join('')
       .trim();
 
-    res.json({ tanka: text });
+    if (!text) {
+      return res.status(500).json({
+        error: 'No tanka returned'
+      });
+    }
+
+    res.json({
+      tanka: text
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Server error:', error);
+
+    res.status(500).json({
+      error: 'Server error'
+    });
   }
 });
+
+/* ─────────────────────────────
+   Frontend
+───────────────────────────── */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,9 +87,21 @@ const distPath = path.join(__dirname, '../dist');
 
 app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
+/*
+  React / Vite の画面を返すフォールバック
+  Express 5では app.get("*") を使わない
+*/
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+
   res.sendFile(path.join(distPath, 'index.html'));
 });
+
+/* ─────────────────────────────
+   Server start
+───────────────────────────── */
 
 const PORT = process.env.PORT || 3001;
 
