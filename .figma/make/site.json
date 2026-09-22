@@ -1,0 +1,10 @@
+{
+  "description": "Immerse in an interactive art experience by inputting a word to generate AI-crafted poems that blend personal expression with collective creativity.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
