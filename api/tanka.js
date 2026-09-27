@@ -40,7 +40,8 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Claude API error:', data);
+      console.error('CLAUDE_ERROR:', response.status, JSON.stringify(data));
+
       return res.status(500).json({
         error: 'Claude API error'
       });
