@@ -188,10 +188,11 @@ ${accumulatedWordsText}
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('CLAUDE_ERROR:', response.status, JSON.stringify(data));
-
       return res.status(500).json({
-        error: 'Claude API error'
+        error: 'Claude API error',
+        anthropicStatus: response.status,
+        message: data?.error?.message || 'Unknown Anthropic error',
+        type: data?.error?.type || 'unknown'
       });
     }
 
