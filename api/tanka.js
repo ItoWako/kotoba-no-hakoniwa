@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { word, accumulatedWords = [] } = req.body;
+    const { word, accumulatedWords = [] } = req.body || {};
 
     if (!word || !word.trim()) {
       return res.status(400).json({
@@ -14,7 +14,8 @@ export default async function handler(req, res) {
       });
     }
 
-    const accumulatedWordsText = accumulatedWords.length > 0 ? accumulatedWords.join('、') : 'まだありません';
+    const accumulatedWordsText =
+      Array.isArray(accumulatedWords) && accumulatedWords.length > 0 ? accumulatedWords.join('、') : 'まだありません';
 
     const prompt = `
 あなたは、日本の古典和歌から近現代短歌まで、短歌の歴史・定型・韻律・修辞・推敲を深く理解した歌人です。
@@ -192,19 +193,26 @@ ${accumulatedWordsText}
         error: 'Claude API error',
         anthropicStatus: response.status,
         message: data?.error?.message || 'Unknown Anthropic error',
-        type: data?.error?.type || 'unknown'
+        type: data?.error?.type || 'unknown',
+        debug: data
       });
     }
 
-    const text = data.content
-      ?.filter((item) => item.type === 'text')
-      .map((item) => item.text)
-      .join('')
-      .trim();
+    const text = Array.isArray(data?.content)
+      ? data.content
+          .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
+          .map((item) => item.text)
+          .join('')
+          .trim()
+      : '';
 
     if (!text) {
       return res.status(500).json({
-        error: 'No tanka returned'
+        error: 'No tanka returned',
+
+        // 一時的なデバッグ用。
+        // Claudeから何が返ってきているか確認する。
+        debug: data
       });
     }
 
@@ -215,7 +223,8 @@ ${accumulatedWordsText}
     console.error('Server error:', error);
 
     return res.status(500).json({
-      error: 'Server error'
+      error: 'Server error',
+      message: error instanceof Error ? error.message : String(error)
     });
   }
 }
