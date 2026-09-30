@@ -120,7 +120,7 @@ ${accumulatedWordsText}
         },
 
         output_config: {
-          effort: 'low'
+          effort: 'high'
         },
 
         messages: [
