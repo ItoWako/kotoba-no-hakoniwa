@@ -40,7 +40,7 @@ export default function GeneratingScreen({ word, photoId, onComplete }: Props) {
     const t2 = setTimeout(() => {
       setWordVisible(false);
       setMessageVisible(true);
-    }, 1750);
+    }, 5000);
 
     let minimumTimer: ReturnType<typeof setTimeout> | undefined;
 
