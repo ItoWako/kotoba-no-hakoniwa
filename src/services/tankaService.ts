@@ -1,3 +1,5 @@
+import { loadTankasForPhoto } from './tankaStorage';
+
 export interface GenerateTankaRequest {
   word: string;
   photoId: string;
@@ -8,52 +10,65 @@ export interface GenerateTankaResponse {
   source: 'claude' | 'fallback';
 }
 
-export async function requestTanka(request: GenerateTankaRequest): Promise<GenerateTankaResponse> {
+export async function requestTanka(
+  request: GenerateTankaRequest,
+  signal?: AbortSignal
+): Promise<GenerateTankaResponse> {
   const word = request.word.trim();
 
   if (!word) {
-    throw new Error('A word is required to generate a tanka.');
+    throw new Error('言葉を入力してください。');
   }
 
-  try {
-    const response = await fetch('/api/tanka', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        word
-      })
-    });
+  const savedEntries = loadTankasForPhoto(request.photoId);
 
-    if (!response.ok) {
-      throw new Error('短歌の生成に失敗しました');
-    }
+  // 同じ写真の過去の言葉を、新しい順に最大100語送る。
+  // 重複した言葉や空の言葉は除く。
+  const accumulatedWords = [
+    ...new Set(
+      [...savedEntries]
+        .reverse()
+        .map((entry) => entry.word.trim())
+        .filter(Boolean)
+    )
+  ].slice(0, 100);
 
-    const data = await response.json();
+  const response = await fetch('/api/tanka', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      word,
+      photoId: request.photoId,
+      accumulatedWords
+    }),
+    signal
+  });
 
-    if (!data.tanka) {
-      throw new Error('短歌が返ってきませんでした');
-    }
-
-    // Claudeが改行で返しても、既存のResultScreenで扱える形に統一
-    const tanka = data.tanka
-      .trim()
-      .split(/\r?\n+/)
-      .map((line: string) => line.trim())
-      .filter(Boolean)
-      .join('　');
-
-    return {
-      tanka,
-      source: 'claude'
-    };
-  } catch (error) {
-    console.error('Tanka generation error:', error);
-
-    return {
-      tanka: `${word}という　言葉からひらく　景色には　まだ名も知らない　光が残る`,
-      source: 'fallback'
-    };
+  if (!response.ok) {
+    throw new Error(`短歌を生成できませんでした（${response.status}）。少し待ってから、もう一度お試しください。`);
   }
+
+  const data: unknown = await response.json();
+
+  if (!data || typeof data !== 'object' || !('tanka' in data) || typeof data.tanka !== 'string') {
+    throw new Error('短歌を受け取れませんでした。もう一度お試しください。');
+  }
+
+  const tanka = data.tanka
+    .trim()
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('　');
+
+  if (!tanka) {
+    throw new Error('短歌が空でした。もう一度お試しください。');
+  }
+
+  return {
+    tanka,
+    source: 'claude'
+  };
 }

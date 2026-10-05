@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ARCHIVE_PHOTOS } from './data';
+import { loadTankasForPhoto } from './services/tankaStorage';
+import type { SavedTanka } from './services/tankaStorage';
 
 interface Props {
   photoId: string;
@@ -9,32 +11,55 @@ interface Props {
   highlightReset?: boolean;
 }
 
-export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAll, highlightReset = false }: Props) {
+export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAll }: Props) {
   const photo = ARCHIVE_PHOTOS.find((p) => p.id === photoId) ?? ARCHIVE_PHOTOS[0];
 
-  const [selectedWord, setSelectedWord] = useState(photo.words[0]?.word ?? '');
+  const [entries, setEntries] = useState<SavedTanka[]>([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [tankaVisible, setTankaVisible] = useState(true);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setVisible(true), 100);
-    return () => clearTimeout(t);
+    try {
+      const saved = loadTankasForPhoto(photoId);
+
+      setEntries(saved);
+      setSelectedId(saved[0]?.id ?? '');
+      setLoadError('');
+    } catch (error) {
+      console.error('短歌の読み込みに失敗しました:', error);
+
+      setEntries([]);
+      setSelectedId('');
+      setLoadError('保存した短歌を読み込めませんでした。');
+    }
+
+    setTankaVisible(true);
+  }, [photoId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 100);
+    return () => clearTimeout(timer);
   }, []);
 
-  const handleWordSelect = (word: string) => {
-    if (word === selectedWord) return;
+  useEffect(() => {
+    if (tankaVisible) return;
+
+    const timer = setTimeout(() => setTankaVisible(true), 250);
+    return () => clearTimeout(timer);
+  }, [selectedId, tankaVisible]);
+
+  const handleWordSelect = (id: string) => {
+    if (id === selectedId) return;
 
     setTankaVisible(false);
-
-    setTimeout(() => {
-      setSelectedWord(word);
-      setTankaVisible(true);
-    }, 250);
+    setSelectedId(id);
   };
 
-  const currentEntry = photo.words.find((w) => w.word === selectedWord) ?? photo.words[0];
-
-  const tankaLines = (currentEntry?.tanka ?? '').split('　');
+  const currentEntry = entries.find((entry) => entry.id === selectedId);
+  const selectedWord = currentEntry?.word ?? '';
+  const tankaLines = currentEntry ? currentEntry.tanka.trim().split(/[　\n]+/) : [];
 
   const isOwnDetail = !!onViewAll;
 
@@ -77,12 +102,12 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
               transition: 'color 0.25s ease, text-decoration 0.25s ease'
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.color = 'var(--c-text)';
-              (e.currentTarget as HTMLElement).style.textDecoration = 'underline';
+              e.currentTarget.style.color = 'var(--c-text)';
+              e.currentTarget.style.textDecoration = 'underline';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.color = 'var(--c-muted)';
-              (e.currentTarget as HTMLElement).style.textDecoration = 'none';
+              e.currentTarget.style.color = 'var(--c-muted)';
+              e.currentTarget.style.textDecoration = 'none';
             }}
           >
             研究を終了する
@@ -186,6 +211,22 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
               transition: 'opacity 0.35s ease, transform 0.35s ease'
             }}
           >
+            {!currentEntry && (
+              <div
+                role="status"
+                style={{
+                  fontFamily: 'Noto Sans JP, sans-serif',
+                  fontSize: 14,
+                  fontWeight: 300,
+                  lineHeight: 1.8,
+                  color: 'var(--c-muted)',
+                  textAlign: 'center'
+                }}
+              >
+                {loadError || 'この景色には、まだ短歌がありません。'}
+              </div>
+            )}
+
             {tankaLines.map((line, i) => (
               <div
                 key={i}
@@ -234,7 +275,7 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
                   color: 'var(--c-text)'
                 }}
               >
-                {photo.inputCount}
+                {entries.length}
               </span>
 
               <span
@@ -271,31 +312,37 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
               overflowY: 'auto'
             }}
           >
-            {photo.words.map((entry) => {
-              const isSel = entry.word === selectedWord;
+            {entries.map((entry) => {
+              const isSel = entry.id === selectedId;
 
               return (
-                <div
-                  key={entry.word}
-                  onClick={() => handleWordSelect(entry.word)}
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => handleWordSelect(entry.id)}
+                  aria-pressed={isSel}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
+                    width: '100%',
                     padding: '10px 0',
+                    background: 'transparent',
+                    border: 'none',
+                    textAlign: 'left',
                     cursor: 'pointer',
                     transition: 'opacity 0.2s ease'
                   }}
                   onMouseEnter={(e) => {
                     if (!isSel) {
-                      (e.currentTarget as HTMLElement).style.opacity = '0.65';
+                      e.currentTarget.style.opacity = '0.65';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.opacity = '1';
+                    e.currentTarget.style.opacity = '1';
                   }}
                 >
-                  <div
+                  <span
                     style={{
                       width: 3,
                       height: 14,
@@ -305,7 +352,7 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
                     }}
                   />
 
-                  <div
+                  <span
                     style={{
                       fontFamily: 'Noto Serif JP, serif',
                       fontSize: 15,
@@ -316,8 +363,8 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
                     }}
                   >
                     {entry.word}
-                  </div>
-                </div>
+                  </span>
+                </button>
               );
             })}
           </div>
@@ -370,7 +417,6 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
           zIndex: 10
         }}
       >
-        {/* Back button */}
         <button
           onClick={onBack}
           style={{
@@ -389,13 +435,16 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
             padding: 0,
             transition: 'color 0.2s ease'
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--c-text)')}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--c-muted)')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--c-text)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--c-muted)';
+          }}
         >
           {isOwnDetail ? '← 自分の短歌に戻る' : '← 一覧へ戻る'}
         </button>
 
-        {/* Forward button */}
         {isOwnDetail && onViewAll && (
           <div
             style={{
@@ -426,13 +475,17 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
                 gap: 10,
                 transition: 'opacity 0.2s ease'
               }}
-              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
-              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = '0.85';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = '1';
+              }}
             >
               他の景色も見る
               <span
                 style={{
-                  fontFamily: 'Inter',
+                  fontFamily: 'Inter, sans-serif',
                   fontWeight: 300
                 }}
               >
