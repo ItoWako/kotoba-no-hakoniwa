@@ -1,21 +1,201 @@
+const TARGET_MORAS = [5, 7, 5, 7, 7];
+const MAX_ATTEMPTS = 3;
+const TOTAL_TIMEOUT_MS = 85000;
+
+// 読みをひらがなに統一する。
+function normalizeReading(value) {
+  if (typeof value !== 'string') return '';
+
+  return value
+    .normalize('NFKC')
+    .replace(/[\u30A1-\u30F6]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60))
+    .replace(/\s+/g, '');
+}
+
+// 拗音の小さい「ゃ・ゅ・ょ」は直前の音に含める。
+// 「っ」「ん」「ー」はそれぞれ1音として数える。
+// 小さい母音も直前の音に含める。
+function countMoras(reading) {
+  const normalized = normalizeReading(reading);
+
+  if (!normalized || !/^[ぁ-ゖー]+$/.test(normalized)) {
+    throw new Error('読みは、かなだけで返してください。');
+  }
+
+  const smallKana = new Set(['ゃ', 'ゅ', 'ょ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゎ']);
+  let count = 0;
+  let previousCharacter = '';
+
+  for (const character of normalized) {
+    if (smallKana.has(character)) {
+      if (!previousCharacter || smallKana.has(previousCharacter) || ['っ', 'ん', 'ー'].includes(previousCharacter)) {
+        throw new Error('読みの小さいかなの使い方を確認してください。');
+      }
+    } else {
+      if (character === 'ー' && !previousCharacter) {
+        throw new Error('読みの先頭に長音符は使えません。');
+      }
+
+      count += 1;
+    }
+
+    previousCharacter = character;
+  }
+
+  return count;
+}
+
+function parseCandidate(text) {
+  // JSONをコードブロックで返した場合にも対応する。
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
+  const data = JSON.parse(cleaned);
+
+  if (!data || typeof data !== 'object' || !Array.isArray(data.lines) || data.lines.length !== 5) {
+    throw new Error('lines配列に5句を返してください。');
+  }
+
+  const lines = data.lines.map((line, index) => {
+    if (!line || typeof line.text !== 'string' || typeof line.reading !== 'string') {
+      throw new Error(`第${index + 1}句にtextとreadingが必要です。`);
+    }
+
+    const text = line.text.trim();
+
+    if (!text || /[\r\n]/.test(text)) {
+      throw new Error(`第${index + 1}句の本文を1句だけ返してください。`);
+    }
+
+    const reading = normalizeReading(line.reading);
+
+    // かなだけの句なら、本文と読みが一致するかも確認する。
+    const kanaText = normalizeReading(text);
+
+    if (/^[ぁ-ゖー]+$/.test(kanaText)) {
+      // 助詞「は・へ」の発音表記の違いを許容する。
+      const pronunciationKey = (value) => value.replace(/は/g, 'わ').replace(/へ/g, 'え');
+
+      if (pronunciationKey(kanaText) !== pronunciationKey(reading)) {
+        throw new Error(`第${index + 1}句の本文と読みが一致していません。`);
+      }
+    }
+
+    const moras = countMoras(reading);
+
+    return {
+      text,
+      reading,
+      moras,
+      difference: moras - TARGET_MORAS[index]
+    };
+  });
+
+  return {
+    lines,
+    exact: lines.every((line) => line.difference === 0),
+    acceptable: lines.every((line) => Math.abs(line.difference) <= 1),
+    score: lines.reduce((sum, line) => sum + Math.abs(line.difference), 0)
+  };
+}
+
+function describeCandidate(candidate) {
+  return candidate.lines
+    .map(
+      (line, index) =>
+        `第${index + 1}句「${line.text}」／読み「${line.reading}」／` + `${line.moras}音／目標${TARGET_MORAS[index]}音`
+    )
+    .join('\n');
+}
+
+async function callClaude(messages, signal) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-5',
+      max_tokens: 4000,
+      thinking: {
+        type: 'adaptive'
+      },
+      output_config: {
+        effort: 'high'
+      },
+      messages
+    }),
+    signal
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error('Claude API error:', data?.error);
+
+    throw new Error('AIとの通信に失敗しました。');
+  }
+
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('AIの出力が途中で終了しました。');
+  }
+
+  const text = Array.isArray(data?.content)
+    ? data.content
+        .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
+        .map((item) => item.text)
+        .join('')
+        .trim()
+    : '';
+
+  if (!text) {
+    throw new Error('短歌を受け取れませんでした。');
+  }
+
+  return text;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+
     return res.status(405).json({
       error: 'Method not allowed'
     });
   }
 
+  const controller = new AbortController();
+  let timeoutTimer;
+
   try {
     const { word, accumulatedWords = [] } = req.body || {};
 
-    if (!word || !word.trim()) {
+    if (typeof word !== 'string' || !word.trim()) {
       return res.status(400).json({
         error: 'word is required'
       });
     }
 
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('ANTHROPIC_API_KEY is missing');
+
+      return res.status(500).json({
+        error: '短歌の生成設定を確認してください。'
+      });
+    }
+
     const accumulatedWordsText =
-      Array.isArray(accumulatedWords) && accumulatedWords.length > 0 ? accumulatedWords.join('、') : 'まだありません';
+      Array.isArray(accumulatedWords) && accumulatedWords.length > 0
+        ? accumulatedWords
+            .filter((value) => typeof value === 'string')
+            .slice(0, 100)
+            .join('、') || 'まだありません'
+        : 'まだありません';
 
     const prompt = `
 あなたは短歌の定型・韻律・修辞・推敲に深く精通した歌人です。「言葉の箱庭」という作品のため、鑑賞者が選んだ一語から短歌を一首詠んでください。
@@ -109,91 +289,134 @@ ${word.trim()}
 【これまでに選ばれた言葉】
 ${accumulatedWordsText}
 
-【出力形式・最重要】
-一首のみ出力してください。必ず次の5句・5行で構成してください(第1句5音/第2句7音/第3句5音/第4句7音/第5句7音)。
+【出力形式】
+鑑賞者に表示する短歌は一首のみ、五・七・五・七・七の5句としてください。
+今回はサーバーで音数を検証するため、本文5行の代わりに、次のJSON形式だけを返してください。
 
-出力は必ず次のような形にしてください(これは形式の見本であり、内容は今回の題材と無関係です)。
+{
+  "lines": [
+    {"text": "第1句の本文", "reading": "だいいっくのよみ"},
+    {"text": "第2句の本文", "reading": "だいにくのよみ"},
+    {"text": "第3句の本文", "reading": "だいさんくのよみ"},
+    {"text": "第4句の本文", "reading": "だいよんくのよみ"},
+    {"text": "第5句の本文", "reading": "だいごくのよみ"}
+  ]
+}
 
-錆びついた
-蛇口をひねる
-掌に
-昔の水の
-重さが戻る
+上の文字列は項目の説明であり、短歌の見本ではありません。
+linesには必ず5つの要素を入れてください。
+textには1句だけを書き、改行・タイトル・解説・音数・注釈を含めないでください。
+readingには、その句全体の正確な読みをひらがなで書いてください。
+本文にある語や助詞を省略したり、存在しない音を加えたりしないでください。
+音数を合わせるために読みを偽らず、本文そのものを推敲してください。
 
-このように、どれだけ内容が自然に繋がっていても、5・7・5・7・7の句切れごとに必ず改行し、5行で出力してください。現代短歌には1行・2行・3行など自由な行分けで発表される慣習がありますが、今回はその慣習を採用せず、必ず5行形式を厳守してください。
+「きゃ・きゅ・きょ」などの拗音は1音、「っ」「ん」はそれぞれ1音です。
+長音も1音として数え、「きゅう」は2音です。
+「魚焼く火が」は「さかなやくひが」で7音なので、第1句には長すぎます。
 
-1行につき1句だけを書いてください。1行の中に複数の句を入れないでください。6行以上出力しないでください。5行未満にもしないでください。長い文章を5行に分割するのではなく、各行を独立した句として成立させてください。複数の短歌や候補を出力するのも禁止です。
+まず正確な五・七・五・七・七を目指してください。
+自然さを損なう場合だけ、元の方針に従って1音のずれを許容してください。
+現代短歌の自由な行分けは採用せず、1要素につき1句を返してください。
 
-タイトル・作者名・解説・前置き・音数・入力語・蓄積リストの内容・注釈は一切出力せず、短歌本文の5行だけを出力してください。
-
-出力する文字列そのものの中で、候補を書いてから訂正する、書き直す、「待って」「訂正します」のような振り返りや言い直しを行わないでください。
-どの語を使うか、結句をどうするかは、出力を書き始める前にすべて内部で決定し切ってください。出力を開始したら、そこから先は最終稿の5行だけを書き、一切の言い直し・注釈・独り言を含めないでください。
+思考過程・候補・訂正の過程は返さず、最終稿のJSONだけを返してください。
 `.trim();
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
-        max_tokens: 4000,
+    timeoutTimer = setTimeout(() => {
+      controller.abort();
+    }, TOTAL_TIMEOUT_MS);
 
-        thinking: {
-          type: 'adaptive'
-        },
+    const messages = [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
 
-        output_config: {
-          effort: 'high'
-        },
+    let bestCandidate = null;
+    let finalCandidate = null;
 
-        messages: [
-          {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      const text = await callClaude(messages, controller.signal);
+
+      messages.push({
+        role: 'assistant',
+        content: text
+      });
+
+      let candidate;
+
+      try {
+        candidate = parseCandidate(text);
+      } catch (error) {
+        if (attempt < MAX_ATTEMPTS - 1) {
+          messages.push({
             role: 'user',
-            content: prompt
-          }
-        ]
-      })
-    });
+            content:
+              `形式または読みの検証に失敗しました。\n` +
+              `${error instanceof Error ? error.message : String(error)}\n` +
+              '本文と正確な読みを持つ5句のJSONを返してください。' +
+              '作品の条件を保ち、五・七・五・七・七を目指してください。'
+          });
+        }
 
-    const data = await response.json();
+        continue;
+      }
 
-    if (!response.ok) {
-      return res.status(500).json({
-        error: 'Claude API error',
-        anthropicStatus: response.status,
-        message: data?.error?.message || 'Unknown Anthropic error',
-        type: data?.error?.type || 'unknown',
-        debug: data
+      if (candidate.acceptable && (!bestCandidate || candidate.score < bestCandidate.score)) {
+        bestCandidate = candidate;
+      }
+
+      if (candidate.exact) {
+        finalCandidate = candidate;
+        break;
+      }
+
+      if (attempt < MAX_ATTEMPTS - 1) {
+        messages.push({
+          role: 'user',
+          content: `
+プログラムで読みの音数を数えた結果です。
+
+${describeCandidate(candidate)}
+
+五・七・五・七・七に近づくよう、本文を推敲してください。
+正しい読みを短縮して音数だけ合わせることは禁止です。
+一部の句を修正した場合も、一首全体の自然さと像の関係を確認してください。
+入力語を中心にすること、結句やクリシェ回避など、最初の作品条件を維持してください。
+句またがりは可能です。各句で文法的な意味を完結させる必要はありません。
+最終稿の5句について、本文と正確な読みを持つJSONだけを返してください。
+`.trim()
+        });
+      }
+    }
+
+    finalCandidate = finalCandidate || bestCandidate;
+
+    if (!finalCandidate) {
+      return res.status(502).json({
+        error: '短歌の音数を整えられませんでした。もう一度お試しください。'
       });
     }
 
-    const text = Array.isArray(data?.content)
-      ? data.content
-          .filter((item) => item && item.type === 'text' && typeof item.text === 'string')
-          .map((item) => item.text)
-          .join('')
-          .trim()
-      : '';
-
-    if (!text) {
-      return res.status(500).json({
-        error: 'No tanka returned',
-        debug: data
-      });
-    }
+    console.log(
+      'Tanka mora check:',
+      finalCandidate.lines.map((line) => line.moras)
+    );
 
     return res.status(200).json({
-      tanka: text
+      tanka: finalCandidate.lines.map((line) => line.text).join('\n')
     });
   } catch (error) {
     console.error('Server error:', error);
 
-    return res.status(500).json({
-      error: 'Server error',
-      message: error instanceof Error ? error.message : String(error)
+    return res.status(controller.signal.aborted ? 504 : 502).json({
+      error: controller.signal.aborted
+        ? '短歌の推敲に時間がかかりました。もう一度お試しください。'
+        : '短歌を生成できませんでした。もう一度お試しください。'
     });
+  } finally {
+    if (timeoutTimer !== undefined) {
+      clearTimeout(timeoutTimer);
+    }
   }
 }
