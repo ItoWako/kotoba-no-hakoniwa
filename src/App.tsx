@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { saveTanka } from './services/tankaStorage';
 import WaitingScreen from './WaitingScreen';
 import ConceptScreen from './ConceptScreen';
@@ -22,6 +22,25 @@ type Screen =
   | 'archive-detail'
   | 'thank-you';
 
+function getIdleTimeout(screen: Screen): number | null {
+  switch (screen) {
+    case 'waiting':
+    case 'generating':
+      return null;
+
+    case 'concept':
+      return 120000;
+
+    case 'result':
+    case 'own-detail':
+    case 'archive-detail':
+      return 90000;
+
+    default:
+      return 45000;
+  }
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('waiting');
   const [overlayVisible, setOverlayVisible] = useState(false);
@@ -31,59 +50,165 @@ export default function App() {
   const [generatedTanka, setGeneratedTanka] = useState('');
   const [archivePhotoId, setArchivePhotoId] = useState<string | null>(null);
   const [hasViewedOtherScene, setHasViewedOtherScene] = useState(false);
+  const [archiveCheckMode, setArchiveCheckMode] = useState(false);
 
   const transitioning = useRef(false);
   const currentTankaId = useRef('');
   const completedGeneration = useRef(false);
+  const screenRef = useRef<Screen>('waiting');
 
-  const navigate = useCallback((target: Screen, color = 'var(--c-bg)', inMs = 400, outMs = 400) => {
-    if (transitioning.current) return;
+  const transitionTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-    transitioning.current = true;
-    setOverlayColor(color);
-    setOverlayVisible(true);
-
-    setTimeout(() => {
-      setScreen(target);
-
-      setTimeout(() => {
-        setOverlayVisible(false);
-        transitioning.current = false;
-      }, outMs);
-    }, inMs);
+  const clearTransitionTimers = useCallback(() => {
+    transitionTimers.current.forEach(clearTimeout);
+    transitionTimers.current = [];
   }, []);
 
-  const handleReset = useCallback(() => {
-    if (transitioning.current) return;
+  const changeScreen = useCallback((target: Screen) => {
+    screenRef.current = target;
+    setScreen(target);
+  }, []);
 
+  const navigate = useCallback(
+    (target: Screen, color = 'var(--c-bg)', inMs = 400, outMs = 400) => {
+      if (transitioning.current) return;
+
+      clearTransitionTimers();
+      transitioning.current = true;
+      setOverlayColor(color);
+      setOverlayVisible(true);
+
+      const enterTimer = setTimeout(() => {
+        changeScreen(target);
+
+        const exitTimer = setTimeout(() => {
+          setOverlayVisible(false);
+          transitioning.current = false;
+        }, outMs);
+
+        transitionTimers.current.push(exitTimer);
+      }, inMs);
+
+      transitionTimers.current.push(enterTimer);
+    },
+    [changeScreen, clearTransitionTimers]
+  );
+
+  // 保存済みの短歌は消さず、今回の体験だけリセットする。
+  const clearExperience = useCallback(() => {
+    setSelectedPhotoId('sign-dusk');
+    setInputWord('');
+    setGeneratedTanka('');
+    setArchivePhotoId(null);
+    setHasViewedOtherScene(false);
+    setArchiveCheckMode(false);
+
+    currentTankaId.current = '';
+    completedGeneration.current = false;
+  }, []);
+
+  const returnToWaiting = useCallback(() => {
+    clearTransitionTimers();
     transitioning.current = true;
     setOverlayColor('var(--c-bg)');
     setOverlayVisible(true);
 
-    setTimeout(() => {
-      setSelectedPhotoId('sign-dusk');
-      setInputWord('');
-      setGeneratedTanka('');
-      setArchivePhotoId(null);
-      setHasViewedOtherScene(false);
+    const enterTimer = setTimeout(() => {
+      clearExperience();
+      changeScreen('waiting');
 
-      currentTankaId.current = '';
-      completedGeneration.current = false;
+      const exitTimer = setTimeout(() => {
+        setOverlayVisible(false);
+        transitioning.current = false;
+      }, 400);
 
-      setScreen('thank-you');
+      transitionTimers.current.push(exitTimer);
+    }, 350);
 
-      setTimeout(() => {
+    transitionTimers.current.push(enterTimer);
+  }, [changeScreen, clearExperience, clearTransitionTimers]);
+
+  const handleReset = useCallback(() => {
+    if (transitioning.current) return;
+
+    if (archiveCheckMode) {
+      returnToWaiting();
+      return;
+    }
+
+    clearTransitionTimers();
+    transitioning.current = true;
+    setOverlayColor('var(--c-bg)');
+    setOverlayVisible(true);
+
+    const enterTimer = setTimeout(() => {
+      clearExperience();
+      changeScreen('thank-you');
+
+      const exitTimer = setTimeout(() => {
         setOverlayVisible(false);
         transitioning.current = false;
       }, 450);
+
+      transitionTimers.current.push(exitTimer);
     }, 350);
-  }, []);
+
+    transitionTimers.current.push(enterTimer);
+  }, [archiveCheckMode, returnToWaiting, changeScreen, clearExperience, clearTransitionTimers]);
+
+  useEffect(() => {
+    const timeoutMs = getIdleTimeout(screen);
+    if (timeoutMs === null) return;
+
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const restartIdleTimer = () => {
+      if (idleTimer !== undefined) {
+        clearTimeout(idleTimer);
+      }
+
+      idleTimer = setTimeout(() => {
+        if (transitioning.current) {
+          restartIdleTimer();
+          return;
+        }
+
+        returnToWaiting();
+      }, timeoutMs);
+    };
+
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'scroll', 'touchstart'] as const;
+
+    events.forEach((event) => {
+      window.addEventListener(event, restartIdleTimer, {
+        capture: true,
+        passive: true
+      });
+    });
+
+    restartIdleTimer();
+
+    return () => {
+      if (idleTimer !== undefined) {
+        clearTimeout(idleTimer);
+      }
+
+      events.forEach((event) => {
+        window.removeEventListener(event, restartIdleTimer, true);
+      });
+    };
+  }, [screen, returnToWaiting]);
+
+  useEffect(() => {
+    return () => clearTransitionTimers();
+  }, [clearTransitionTimers]);
 
   const handleGenerationComplete = useCallback(
     (tanka: string) => {
+      if (screenRef.current !== 'generating') return;
       if (completedGeneration.current) return;
-      completedGeneration.current = true;
 
+      completedGeneration.current = true;
       setGeneratedTanka(tanka);
 
       try {
@@ -105,6 +230,16 @@ export default function App() {
     [inputWord, selectedPhotoId, navigate]
   );
 
+  const openArchiveForCheck = useCallback(() => {
+    if (screenRef.current !== 'waiting') return;
+    if (transitioning.current) return;
+
+    setArchiveCheckMode(true);
+    setArchivePhotoId(null);
+    setHasViewedOtherScene(false);
+    navigate('archive', 'var(--c-bg)', 300, 300);
+  }, [navigate]);
+
   return (
     <div
       style={{
@@ -115,19 +250,36 @@ export default function App() {
         background: 'var(--c-bg)'
       }}
     >
-      {screen === 'waiting' && <WaitingScreen onComplete={() => navigate('concept', 'var(--c-bg)', 350, 500)} />}
+      {screen === 'waiting' && (
+        <WaitingScreen
+          onComplete={() => {
+            if (screenRef.current !== 'waiting') return;
+            if (transitioning.current) return;
 
-      {screen === 'concept' && <ConceptScreen onStart={() => navigate('photo-selection', 'var(--c-bg)', 350, 350)} />}
+            setArchiveCheckMode(false);
+            navigate('concept', 'var(--c-bg)', 350, 500);
+          }}
+        />
+      )}
+
+      {screen === 'concept' && (
+        <ConceptScreen
+          onStart={() => {
+            if (screenRef.current !== 'concept') return;
+
+            navigate('photo-selection', 'var(--c-bg)', 350, 350);
+          }}
+        />
+      )}
 
       {screen === 'photo-selection' && (
         <PhotoSelectionScreen
           onSelect={(id) => {
-            setSelectedPhotoId(id);
+            if (screenRef.current !== 'photo-selection') return;
+            if (transitioning.current) return;
 
-            setTimeout(() => {
-              setScreen('input');
-              transitioning.current = false;
-            }, 0);
+            setSelectedPhotoId(id);
+            changeScreen('input');
           }}
           onBack={() => navigate('concept', 'var(--c-bg)', 300, 300)}
         />
@@ -137,11 +289,14 @@ export default function App() {
         <InputScreen
           photoId={selectedPhotoId}
           onSubmit={(word) => {
-            currentTankaId.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            completedGeneration.current = false;
+            if (screenRef.current !== 'input') return;
+            if (transitioning.current) return;
 
+            currentTankaId.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+            completedGeneration.current = false;
             setInputWord(word);
-            setScreen('generating');
+            changeScreen('generating');
           }}
           onBack={() => navigate('photo-selection', 'var(--c-bg)', 300, 300)}
         />
@@ -171,12 +326,23 @@ export default function App() {
 
       {screen === 'archive' && (
         <ArchiveScreen
+          isCheckMode={archiveCheckMode}
           onPhotoSelect={(id) => {
+            if (transitioning.current) return;
+
             setArchivePhotoId(id);
             setHasViewedOtherScene(true);
             navigate('archive-detail', 'var(--c-bg)', 300, 300);
           }}
-          onBack={() => navigate('own-detail', 'var(--c-bg)', 300, 300)}
+          onBack={() => {
+            if (transitioning.current) return;
+
+            if (archiveCheckMode) {
+              returnToWaiting();
+            } else {
+              navigate('own-detail', 'var(--c-bg)', 300, 300);
+            }
+          }}
           onReset={handleReset}
           highlightReset={hasViewedOtherScene}
         />
@@ -191,7 +357,38 @@ export default function App() {
         />
       )}
 
-      {screen === 'thank-you' && <ThankYouScreen onComplete={() => navigate('waiting', 'var(--c-bg)', 350, 500)} />}
+      {screen === 'thank-you' && (
+        <ThankYouScreen
+          onComplete={() => {
+            if (screenRef.current !== 'thank-you') return;
+
+            navigate('waiting', 'var(--c-bg)', 350, 500);
+          }}
+        />
+      )}
+
+      {screen === 'waiting' && (
+        <button
+          type="button"
+          aria-label="確認用アーカイブを開く"
+          onClick={(event) => {
+            event.stopPropagation();
+            openArchiveForCheck();
+          }}
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            width: 64,
+            height: 64,
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'default',
+            zIndex: 8000
+          }}
+        />
+      )}
 
       <div
         style={{

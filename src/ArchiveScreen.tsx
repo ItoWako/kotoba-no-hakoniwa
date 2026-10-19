@@ -8,20 +8,34 @@ interface Props {
   onBack: () => void;
   onReset: () => void;
   highlightReset?: boolean;
+  isCheckMode?: boolean;
 }
 
-export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highlightReset = false }: Props) {
+export default function ArchiveScreen({
+  onPhotoSelect,
+  onBack,
+  onReset,
+  highlightReset = false,
+  isCheckMode = false
+}: Props) {
   const [visible, setVisible] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [tankaCount, setTankaCount] = useState<number | null>(null);
-  const lastTapRef = useRef<{ id: string; time: number } | null>(null);
+  const [backupMessage, setBackupMessage] = useState('');
+  const [backupError, setBackupError] = useState(false);
+
+  const lastTapRef = useRef<{
+    id: string;
+    time: number;
+  } | null>(null);
 
   useEffect(() => {
     try {
       const photoIds = new Set(ARCHIVE_PHOTOS.filter((photo) => !photo.isPlaceholder).map((photo) => photo.id));
 
       const saved = loadTankas();
+
       setTankaCount(saved.filter((entry) => photoIds.has(entry.photoId)).length);
     } catch (error) {
       console.error('短歌の件数を読み込めませんでした:', error);
@@ -31,6 +45,58 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
     const timer = setTimeout(() => setVisible(true), 100);
     return () => clearTimeout(timer);
   }, []);
+
+  const handleBackup = () => {
+    if (!isCheckMode) return;
+
+    setBackupMessage('');
+    setBackupError(false);
+
+    let url: string | undefined;
+    let link: HTMLAnchorElement | undefined;
+
+    try {
+      // 写真一覧の件数にかかわらず、保存済みの全件を出力する。
+      const entries = loadTankas();
+
+      if (entries.length === 0) {
+        setBackupMessage('バックアップする短歌がありません。');
+        return;
+      }
+
+      const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+
+      url = URL.createObjectURL(blob);
+      link = document.createElement('a');
+
+      const date = new Date().toISOString().replace(/[:.]/g, '-');
+
+      link.href = url;
+      link.download = `kotoba-no-hakoniwa-backup-${date}.json`;
+
+      document.body.appendChild(link);
+      link.click();
+
+      setBackupMessage(`${entries.length}首のダウンロードを開始しました。保存されたJSONファイルを確認してください。`);
+    } catch (error) {
+      console.error('バックアップに失敗しました:', error);
+      setBackupError(true);
+      setBackupMessage(
+        'バックアップを開始できませんでした。保存データとブラウザのダウンロード設定を確認してください。'
+      );
+    } finally {
+      link?.remove();
+
+      if (url !== undefined) {
+        const downloadUrl = url;
+
+        // ダウンロード処理が始まるまでURLを保持する。
+        window.setTimeout(() => {
+          URL.revokeObjectURL(downloadUrl);
+        }, 10000);
+      }
+    }
+  };
 
   const handleTouchEnd = (photoId: string) => {
     const now = Date.now();
@@ -59,7 +125,6 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
         flexDirection: 'column'
       }}
     >
-      {/* Header */}
       <div
         style={{
           position: 'sticky',
@@ -69,12 +134,21 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
           borderBottom: '1px solid var(--c-border)',
           padding: '22px 56px',
           display: 'flex',
+          flexWrap: 'wrap',
+          gap: 20,
           alignItems: 'center',
           justifyContent: 'space-between'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 24
+          }}
+        >
           <button
+            type="button"
             onClick={onBack}
             style={{
               background: 'transparent',
@@ -88,14 +162,14 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
               padding: 0,
               transition: 'color 0.2s ease'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--c-text)';
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = 'var(--c-text)';
             }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--c-muted)';
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = 'var(--c-muted)';
             }}
           >
-            ← 自分の景色へ戻る
+            {isCheckMode ? '← タイトルへ戻る' : '← 自分の景色へ戻る'}
           </button>
 
           <div
@@ -106,7 +180,13 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
             }}
           />
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 6
+            }}
+          >
             {tankaCount === null ? (
               <div
                 role="status"
@@ -147,39 +227,86 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
           </div>
         </div>
 
-        <button
-          onClick={onReset}
+        <div
           style={{
-            background: highlightReset ? 'var(--c-accent)' : 'transparent',
-            border: 'none',
-            fontFamily: 'Noto Sans JP, sans-serif',
-            fontSize: 11,
-            fontWeight: highlightReset ? 400 : 300,
-            letterSpacing: '0.05em',
-            color: highlightReset ? 'var(--c-dark)' : 'var(--c-muted)',
-            cursor: 'pointer',
-            padding: highlightReset ? '9px 14px' : 0,
-            textDecoration: 'none',
-            transition: 'all 0.25s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (!highlightReset) {
-              e.currentTarget.style.color = 'var(--c-text)';
-              e.currentTarget.style.textDecoration = 'underline';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!highlightReset) {
-              e.currentTarget.style.color = 'var(--c-muted)';
-              e.currentTarget.style.textDecoration = 'none';
-            }
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 24
           }}
         >
-          研究を終了する
-        </button>
+          {isCheckMode && (
+            <button
+              type="button"
+              onClick={handleBackup}
+              style={{
+                background: 'var(--c-accent)',
+                border: 'none',
+                color: 'var(--c-dark)',
+                padding: '10px 16px',
+                fontFamily: 'Noto Sans JP, sans-serif',
+                fontSize: 11,
+                fontWeight: 400,
+                letterSpacing: '0.05em',
+                cursor: 'pointer'
+              }}
+            >
+              JSONバックアップを保存
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onReset}
+            style={{
+              background: highlightReset ? 'var(--c-accent)' : 'transparent',
+              border: 'none',
+              fontFamily: 'Noto Sans JP, sans-serif',
+              fontSize: 11,
+              fontWeight: highlightReset ? 400 : 300,
+              letterSpacing: '0.05em',
+              color: highlightReset ? 'var(--c-dark)' : 'var(--c-muted)',
+              cursor: 'pointer',
+              padding: highlightReset ? '9px 14px' : 0,
+              textDecoration: 'none',
+              transition: 'all 0.25s ease'
+            }}
+            onMouseEnter={(event) => {
+              if (!highlightReset) {
+                event.currentTarget.style.color = 'var(--c-text)';
+                event.currentTarget.style.textDecoration = 'underline';
+              }
+            }}
+            onMouseLeave={(event) => {
+              if (!highlightReset) {
+                event.currentTarget.style.color = 'var(--c-muted)';
+                event.currentTarget.style.textDecoration = 'none';
+              }
+            }}
+          >
+            {isCheckMode ? '確認を終了する' : '研究を終了する'}
+          </button>
+        </div>
       </div>
 
-      {/* Photo grid */}
+      {isCheckMode && backupMessage && (
+        <div
+          role={backupError ? 'alert' : 'status'}
+          style={{
+            padding: '12px 56px',
+            borderBottom: '1px solid var(--c-border)',
+            fontFamily: 'Noto Sans JP, sans-serif',
+            fontSize: 12,
+            fontWeight: 300,
+            lineHeight: 1.8,
+            color: 'var(--c-text)',
+            flexShrink: 0
+          }}
+        >
+          {backupMessage}
+        </div>
+      )}
+
       <div
         style={{
           flex: 1,
@@ -191,14 +318,14 @@ export default function ArchiveScreen({ onPhotoSelect, onBack, onReset, highligh
           gap: 14
         }}
       >
-        {ARCHIVE_PHOTOS.map((photo, i) =>
+        {ARCHIVE_PHOTOS.map((photo, index) =>
           photo.isPlaceholder ? (
-            <PlaceholderCell key={photo.id} index={i} label={photo.label} />
+            <PlaceholderCell key={photo.id} index={index} label={photo.label} />
           ) : (
             <PhotoCell
               key={photo.id}
               photo={photo}
-              index={i}
+              index={index}
               isHovered={hovered === photo.id}
               isSelected={selected === photo.id}
               onHover={setHovered}
@@ -240,9 +367,9 @@ function PhotoCell({
       onClick={() => onSelect(photo.id)}
       onDoubleClick={() => onEnter(photo.id)}
       onTouchEnd={onTouchEnd}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
           onEnter(photo.id);
         }
       }}
