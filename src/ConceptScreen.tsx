@@ -4,7 +4,11 @@ interface Props {
   onStart: () => void;
 }
 
-const SCROLL_HINT_DELAY_MS = 10000;
+// 案内が出始めるまでの待ち時間
+const SCROLL_HINT_DELAY_MS = 500;
+
+// 矢印が上から降りてくる時間
+const ARROW_DURATION_MS = 2200;
 
 const WORD_LIST = [
   '静寂',
@@ -69,7 +73,6 @@ function FloatingWords({ scrollTop, enabled }: { scrollTop: number; enabled: boo
     idxRef.current++;
 
     const size = WORD_SIZES[Math.floor(Math.random() * WORD_SIZES.length)];
-
     const viewportH = window.innerHeight || 900;
 
     const fw: FWord = {
@@ -123,11 +126,7 @@ function FloatingWords({ scrollTop, enabled }: { scrollTop: number; enabled: boo
 
     return () => {
       window.clearInterval(interval);
-
-      cleanupTimers.current.forEach((timer) => {
-        window.clearTimeout(timer);
-      });
-
+      cleanupTimers.current.forEach((timer) => window.clearTimeout(timer));
       cleanupTimers.current.clear();
     };
   }, [enabled, addWord]);
@@ -219,7 +218,6 @@ export default function ConceptScreen({ onStart }: Props) {
     const el = scrollerRef.current;
     if (!el || leaving) return;
 
-    let lastScrollTop = el.scrollTop;
     let hintTimer: number | undefined;
 
     const canScrollDown = () => el.scrollHeight - el.clientHeight - el.scrollTop > 4;
@@ -239,30 +237,15 @@ export default function ConceptScreen({ onStart }: Props) {
       hintTimer = window.setTimeout(() => {
         hintTimer = undefined;
 
-        if (canScrollDown()) {
+        if (canScrollDown() && !leavingRef.current) {
           setScrollHintVisible(true);
         }
       }, SCROLL_HINT_DELAY_MS);
     };
 
     const handleScroll = () => {
-      const nextScrollTop = el.scrollTop;
-      const movedDown = nextScrollTop > lastScrollTop;
-
-      lastScrollTop = nextScrollTop;
-
-      if (!canScrollDown()) {
-        clearHintTimer();
-        setScrollHintVisible(false);
-        return;
-      }
-
-      if (movedDown) {
-        setScrollHintVisible(false);
-        armHintTimer();
-      } else if (hintTimer === undefined) {
-        armHintTimer();
-      }
+      setScrollHintVisible(false);
+      armHintTimer();
     };
 
     const handleResize = () => {
@@ -327,6 +310,59 @@ export default function ConceptScreen({ onStart }: Props) {
         overflow: 'hidden'
       }}
     >
+      <style>{`
+        @keyframes hakoniwa-arrow-descend {
+          0% {
+            transform: translateY(-100vh);
+            opacity: 0;
+          }
+          12% {
+            opacity: 0.8;
+          }
+          100% {
+            transform: translateY(0);
+            opacity: 0.8;
+          }
+        }
+
+        @keyframes hakoniwa-scroll-label {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 0.8;
+          }
+        }
+
+        .hakoniwa-scroll-arrow {
+          opacity: 0;
+          animation:
+            hakoniwa-arrow-descend
+            ${ARROW_DURATION_MS}ms
+            cubic-bezier(0.22, 0.61, 0.36, 1)
+            both;
+        }
+
+        .hakoniwa-scroll-label {
+          opacity: 0;
+          animation:
+            hakoniwa-scroll-label
+            600ms
+            ease
+            ${ARROW_DURATION_MS}ms
+            both;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .hakoniwa-scroll-arrow,
+          .hakoniwa-scroll-label {
+            animation: none;
+            transform: none;
+            opacity: 0.8;
+          }
+        }
+      `}</style>
+
       <div
         ref={scrollerRef}
         onScroll={(event) => {
@@ -622,56 +658,65 @@ export default function ConceptScreen({ onStart }: Props) {
         </div>
       </div>
 
-      <button
-        type="button"
-        aria-label="下へスクロールして続きを読む"
-        onClick={handleScrollHintClick}
-        tabIndex={scrollHintVisible && !leaving ? 0 : -1}
-        disabled={!scrollHintVisible || leaving}
-        style={{
-          position: 'absolute',
-          left: '50%',
-          bottom: 28,
-          transform: 'translateX(-50%)',
-          width: 100,
-          height: 80,
-          padding: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--c-bg)',
-          border: 'none',
-          color: 'var(--c-text)',
-          opacity: scrollHintVisible && !leaving ? 0.8 : 0,
-          transition: 'opacity 0.6s ease',
-          pointerEvents: scrollHintVisible && !leaving ? 'auto' : 'none',
-          cursor: 'pointer',
-          zIndex: 5
-        }}
-      >
-        <span
+      {scrollHintVisible && !leaving && (
+        <button
+          type="button"
+          aria-label="下へスクロールして続きを読む"
+          onClick={handleScrollHintClick}
           style={{
-            fontFamily: 'Noto Sans JP, sans-serif',
-            fontSize: 12,
-            fontWeight: 300,
-            letterSpacing: '0.12em'
+            position: 'absolute',
+            left: '50%',
+            bottom: 28,
+            transform: 'translateX(-50%)',
+            width: 100,
+            height: 80,
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--c-text)',
+            cursor: 'pointer',
+            zIndex: 5
           }}
         >
-          scroll
-        </span>
+          <span
+            className="hakoniwa-scroll-label"
+            style={{
+              fontFamily: 'Noto Sans JP, sans-serif',
+              fontSize: 12,
+              fontWeight: 300,
+              letterSpacing: '0.12em'
+            }}
+          >
+            SCROLL
+          </span>
 
-        <svg width="28" height="36" viewBox="0 0 28 36" fill="none" aria-hidden="true">
-          <path
-            d="M14 3V31M4 21L14 31L24 21"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="square"
-            strokeLinejoin="miter"
-          />
-        </svg>
-      </button>
+          <svg
+            className="hakoniwa-scroll-arrow"
+            width="28"
+            height="36"
+            viewBox="0 0 28 36"
+            fill="none"
+            aria-hidden="true"
+            style={{
+              flexShrink: 0,
+              pointerEvents: 'none'
+            }}
+          >
+            <path
+              d="M14 3V31M4 21L14 31L24 21"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
+            />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

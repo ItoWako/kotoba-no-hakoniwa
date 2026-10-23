@@ -46,6 +46,11 @@ export default function ArchiveScreen({
     return () => clearTimeout(timer);
   }, []);
 
+  const handleEnter = () => {
+    if (!selected) return;
+    onPhotoSelect(selected);
+  };
+
   const handleBackup = () => {
     if (!isCheckMode) return;
 
@@ -56,7 +61,6 @@ export default function ArchiveScreen({
     let link: HTMLAnchorElement | undefined;
 
     try {
-      // 写真一覧の件数にかかわらず、保存済みの全件を出力する。
       const entries = loadTankas();
 
       if (entries.length === 0) {
@@ -90,7 +94,6 @@ export default function ArchiveScreen({
       if (url !== undefined) {
         const downloadUrl = url;
 
-        // ダウンロード処理が始まるまでURLを保持する。
         window.setTimeout(() => {
           URL.revokeObjectURL(downloadUrl);
         }, 10000);
@@ -232,7 +235,8 @@ export default function ArchiveScreen({
             display: 'flex',
             alignItems: 'center',
             flexWrap: 'wrap',
-            gap: 24
+            gap: 24,
+            marginLeft: 'auto'
           }}
         >
           {isCheckMode && (
@@ -285,6 +289,37 @@ export default function ArchiveScreen({
             }}
           >
             {isCheckMode ? '確認を終了する' : '研究を終了する'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleEnter}
+            disabled={!selected}
+            style={{
+              background: selected ? 'var(--c-accent)' : 'transparent',
+              border: `1px solid ${selected ? 'var(--c-accent)' : 'var(--c-border)'}`,
+              color: selected ? 'var(--c-dark)' : 'var(--c-border)',
+              padding: '10px 24px',
+              fontFamily: 'Noto Sans JP, sans-serif',
+              fontSize: 13,
+              fontWeight: selected ? 400 : 300,
+              letterSpacing: '0.08em',
+              cursor: selected ? 'pointer' : 'default',
+              transition: 'all 0.3s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10
+            }}
+          >
+            この景色を見る
+            <span
+              style={{
+                fontFamily: 'Inter',
+                fontWeight: 300
+              }}
+            >
+              →
+            </span>
           </button>
         </div>
       </div>
