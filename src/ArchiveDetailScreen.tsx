@@ -128,7 +128,7 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
         {/* Photo */}
         <div
           style={{
-            padding: '0 44px 80px 72px',
+            padding: '0 44px 130px 72px',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center'
@@ -156,7 +156,13 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
             />
           </div>
 
-          <div style={{ marginTop: 14, flexShrink: 0 }}>
+          <div
+            style={{
+              marginTop: 14,
+              flexShrink: 0,
+              transform: 'translateY(20px)'
+            }}
+          >
             <div
               style={{
                 fontFamily: 'Inter, sans-serif',
@@ -418,28 +424,30 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
         }}
       >
         <button
+          type="button"
           onClick={onBack}
           style={{
             position: 'absolute',
             left: 0,
             top: '50%',
             transform: 'translateY(-50%)',
-            background: 'transparent',
+            background: isOwnDetail ? 'transparent' : 'var(--c-accent)',
             border: 'none',
+            borderRadius: 0,
             fontFamily: 'Noto Sans JP, sans-serif',
             fontSize: 12,
-            fontWeight: 300,
+            fontWeight: isOwnDetail ? 300 : 400,
             letterSpacing: '0.05em',
-            color: 'var(--c-muted)',
+            color: isOwnDetail ? 'var(--c-muted)' : 'var(--c-dark)',
             cursor: 'pointer',
-            padding: 0,
-            transition: 'color 0.2s ease'
+            padding: isOwnDetail ? 0 : '13px 28px',
+            transition: 'opacity 0.2s ease'
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--c-text)';
+          onMouseEnter={(event) => {
+            event.currentTarget.style.opacity = '0.8';
           }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--c-muted)';
+          onMouseLeave={(event) => {
+            event.currentTarget.style.opacity = '1';
           }}
         >
           {isOwnDetail ? '← 自分の短歌に戻る' : '← 一覧へ戻る'}

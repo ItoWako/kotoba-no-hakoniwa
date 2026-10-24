@@ -4,11 +4,8 @@ interface Props {
   onStart: () => void;
 }
 
-// 案内が出始めるまでの待ち時間
-const SCROLL_HINT_DELAY_MS = 500;
-
-// 矢印が上から降りてくる時間
-const ARROW_DURATION_MS = 2200;
+const SCROLL_HINT_DELAY_MS = 1000;
+const ARROW_DURATION_MS = 7000;
 
 const WORD_LIST = [
   '静寂',
@@ -212,6 +209,9 @@ export default function ConceptScreen({ onStart }: Props) {
   const startTimerRef = useRef<number | null>(null);
   const leavingRef = useRef(false);
 
+  // 一度スクロールしたら、この画面では案内を再表示しない。
+  const hasScrolledOnceRef = useRef(false);
+
   const hasScrolled = scrollTop > 30;
 
   useEffect(() => {
@@ -219,6 +219,10 @@ export default function ConceptScreen({ onStart }: Props) {
     if (!el || leaving) return;
 
     let hintTimer: number | undefined;
+
+    if (el.scrollTop > 0) {
+      hasScrolledOnceRef.current = true;
+    }
 
     const canScrollDown = () => el.scrollHeight - el.clientHeight - el.scrollTop > 4;
 
@@ -232,20 +236,23 @@ export default function ConceptScreen({ onStart }: Props) {
     const armHintTimer = () => {
       clearHintTimer();
 
-      if (!canScrollDown()) return;
+      if (hasScrolledOnceRef.current || !canScrollDown()) return;
 
       hintTimer = window.setTimeout(() => {
         hintTimer = undefined;
 
-        if (canScrollDown() && !leavingRef.current) {
+        if (!hasScrolledOnceRef.current && !leavingRef.current && canScrollDown()) {
           setScrollHintVisible(true);
         }
       }, SCROLL_HINT_DELAY_MS);
     };
 
     const handleScroll = () => {
-      setScrollHintVisible(false);
-      armHintTimer();
+      if (el.scrollTop > 0) {
+        hasScrolledOnceRef.current = true;
+        clearHintTimer();
+        setScrollHintVisible(false);
+      }
     };
 
     const handleResize = () => {
@@ -291,6 +298,7 @@ export default function ConceptScreen({ onStart }: Props) {
     const el = scrollerRef.current;
     if (!el || leavingRef.current) return;
 
+    hasScrolledOnceRef.current = true;
     setScrollHintVisible(false);
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -692,7 +700,7 @@ export default function ConceptScreen({ onStart }: Props) {
               letterSpacing: '0.12em'
             }}
           >
-            SCROLL
+            SCROLL TO READ
           </span>
 
           <svg
