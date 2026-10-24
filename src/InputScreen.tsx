@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { ARCHIVE_PHOTOS, ACTIVE_PHOTO } from './data';
+import { isBlockedWord, BLOCKED_WORD_MESSAGE } from './services/wordFilter';
 
 interface Props {
   photoId: string;
@@ -24,7 +26,7 @@ export const PLACEMENT: Record<string, Placement> = {
   'overpass-sky': 'bottom-left'
 };
 
-export function getUIStyle(placement: Placement): React.CSSProperties {
+export function getUIStyle(placement: Placement): CSSProperties {
   switch (placement) {
     case 'bottom-left':
       return {
@@ -53,13 +55,16 @@ export function getUIStyle(placement: Placement): React.CSSProperties {
 export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
   const [word, setWord] = useState('');
   const [uiVisible, setUiVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const composingRef = useRef(false);
+  const submittedRef = useRef(false);
 
-  const placement: Placement = PLACEMENT[photoId] ?? 'bottom-right';
-
+  const placement = PLACEMENT[photoId] ?? 'bottom-right';
   const photo = ARCHIVE_PHOTOS.find((p) => p.id === photoId) ?? ACTIVE_PHOTO;
+
+  const inputAlign = placement === 'bottom-left' ? 'left' : placement === 'bottom-center' ? 'center' : 'right';
 
   useEffect(() => {
     const t1 = setTimeout(() => setUiVisible(true), 200);
@@ -72,17 +77,25 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
   }, []);
 
   const handleSubmit = () => {
-    if (composingRef.current) return;
+    if (submittedRef.current || composingRef.current) return;
 
     const trimmed = word.trim();
-    if (trimmed) onSubmit(trimmed);
-  };
 
-  const inputAlign = placement === 'bottom-left' ? 'left' : placement === 'bottom-center' ? 'center' : 'right';
+    if (!trimmed) return;
+
+    if (isBlockedWord(trimmed)) {
+      setErrorMessage(BLOCKED_WORD_MESSAGE);
+      inputRef.current?.focus();
+      return;
+    }
+
+    setErrorMessage('');
+    submittedRef.current = true;
+    onSubmit(trimmed);
+  };
 
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
-      {/* 写真 */}
       <img
         src={photo.fullUrl ?? ''}
         alt={photo.alt}
@@ -95,7 +108,6 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
         }}
       />
 
-      {/* 写真下部のグラデーション */}
       <div
         style={{
           position: 'absolute',
@@ -105,7 +117,6 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
         }}
       />
 
-      {/* 上部のラベルと戻るボタン */}
       <div
         style={{
           position: 'absolute',
@@ -158,7 +169,6 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
         </button>
       </div>
 
-      {/* 写真ごとの位置に入力欄を配置 */}
       <div
         style={{
           position: 'absolute',
@@ -184,19 +194,23 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
 
         <div
           style={{
+            width: 220,
             display: 'flex',
             flexDirection: 'column',
-            gap: 12,
-            width: 220
+            gap: 12
           }}
         >
           <input
             ref={inputRef}
             type="text"
-            aria-label="写真から思い浮かんだ一語"
-            aria-describedby="input-enter-hint"
+            aria-label="景色から思い浮かんだ一語"
+            aria-invalid={Boolean(errorMessage)}
+            aria-describedby={errorMessage ? 'input-enter-hint input-word-error' : 'input-enter-hint'}
             value={word}
-            onChange={(event) => setWord(event.target.value)}
+            onChange={(event) => {
+              setWord(event.target.value);
+              setErrorMessage('');
+            }}
             onCompositionStart={() => {
               composingRef.current = true;
             }}
@@ -206,7 +220,7 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return;
 
-              if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) {
+              if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
                 return;
               }
 
@@ -248,6 +262,25 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
           >
             Enterで入力
           </div>
+
+          {errorMessage && (
+            <div
+              id="input-word-error"
+              role="alert"
+              style={{
+                fontFamily: 'Noto Sans JP, sans-serif',
+                fontSize: 12,
+                fontWeight: 400,
+                lineHeight: 1.9,
+                letterSpacing: '0.04em',
+                color: 'var(--c-accent)',
+                textAlign: inputAlign,
+                overflowWrap: 'anywhere'
+              }}
+            >
+              {errorMessage}
+            </div>
+          )}
         </div>
 
         <div
@@ -287,7 +320,6 @@ export default function InputScreen({ photoId, onSubmit, onBack }: Props) {
         </div>
       </div>
 
-      {/* 画面下部の案内 */}
       <div
         style={{
           position: 'absolute',

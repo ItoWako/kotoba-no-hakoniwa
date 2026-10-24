@@ -1,3 +1,84 @@
+const BLOCKED_WORD_MESSAGE = 'この言葉は入力できません。別の一語を選んでください。';
+
+function normalizeInputWord(value) {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\u200B-\u200D\uFEFF]/gu, '')
+    .replace(/[ァ-ヶ]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
+}
+
+const BLOCKED_EXACT_WORDS = new Set(
+  [
+    '死ね',
+    'しね',
+    '氏ね',
+    '市ね',
+    '消えろ',
+    'きえろ',
+    '失せろ',
+    'うせろ',
+    'くたばれ',
+    '殺す',
+    'ころす',
+    'ぶっ殺す',
+    'ぶっころす',
+    '殺してやる',
+    '自殺しろ',
+    '馬鹿',
+    'ばか',
+    '阿呆',
+    'あほ',
+    'ぶす',
+    'きもい',
+    'きしょい',
+    'ちんこ',
+    'ちんぽ',
+    'まんこ',
+    'おっぱい',
+    'セックス',
+    'sex',
+    'fuck',
+    'ちょん',
+    'チャンコロ',
+    'きちがい',
+    'ガイジ',
+    '池沼',
+    'かたわ',
+    'うんち',
+    'うんこ'
+  ].map(normalizeInputWord)
+);
+
+const BLOCKED_INPUT_PHRASES = [
+  '死ね',
+  '自殺しろ',
+  'ぶっ殺',
+  'ぶっころ',
+  '殺してやる',
+  '犯してやる',
+  '強姦',
+  'レイプ',
+  '児童ポルノ',
+  'ちんこ',
+  'ちんぽ',
+  'まんこ',
+  'プロンプト',
+  '指示を無視',
+  '命令を無視',
+  '指示を忘れ',
+  '命令を忘れ',
+  'ignore previous',
+  'ignore all instructions',
+  'system prompt'
+].map(normalizeInputWord);
+
+function isBlockedInputWord(value) {
+  const normalized = normalizeInputWord(value);
+
+  return BLOCKED_EXACT_WORDS.has(normalized) || BLOCKED_INPUT_PHRASES.some((phrase) => normalized.includes(phrase));
+}
+
 const TARGET_MORAS = [5, 7, 5, 7, 7];
 const MAX_ATTEMPTS = 3;
 const TOTAL_TIMEOUT_MS = 85000;
@@ -23,6 +104,7 @@ function countMoras(reading) {
   }
 
   const smallKana = new Set(['ゃ', 'ゅ', 'ょ', 'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'ゎ']);
+
   let count = 0;
   let previousCharacter = '';
 
@@ -178,6 +260,14 @@ export default async function handler(req, res) {
     if (typeof word !== 'string' || !word.trim()) {
       return res.status(400).json({
         error: 'word is required'
+      });
+    }
+
+    // 禁止用語はClaude APIを呼び出す前に拒否する。
+    if (isBlockedInputWord(word)) {
+      return res.status(400).json({
+        error: BLOCKED_WORD_MESSAGE,
+        code: 'BLOCKED_WORD'
       });
     }
 
