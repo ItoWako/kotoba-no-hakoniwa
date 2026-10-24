@@ -122,7 +122,9 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
           minHeight: 0,
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 240px',
-          marginTop: 36
+          gridTemplateRows: 'minmax(0, 1fr)',
+          marginTop: 36,
+          overflow: 'hidden'
         }}
       >
         {/* Photo */}
@@ -257,10 +259,14 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
         {/* Word list */}
         <div
           style={{
+            minHeight: 0,
+            minWidth: 0,
             borderLeft: '1px solid var(--c-border)',
             padding: '0 32px 176px 28px',
+            boxSizing: 'border-box',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            overflow: 'hidden'
           }}
         >
           <div style={{ flexShrink: 0, marginBottom: 24 }}>
@@ -315,7 +321,10 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
             style={{
               flex: 1,
               minHeight: 0,
-              overflowY: 'auto'
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              paddingRight: 8,
+              overscrollBehaviorY: 'contain'
             }}
           >
             {entries.map((entry) => {
