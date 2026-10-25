@@ -7,6 +7,7 @@ interface Props {
   onPhotoSelect: (id: string) => void;
   onBack: () => void;
   onReset: () => void;
+  onRestart?: () => void;
   highlightReset?: boolean;
   isCheckMode?: boolean;
 }
@@ -15,6 +16,7 @@ export default function ArchiveScreen({
   onPhotoSelect,
   onBack,
   onReset,
+  onRestart,
   highlightReset = false,
   isCheckMode = false
 }: Props) {
@@ -290,6 +292,35 @@ export default function ArchiveScreen({
           >
             {isCheckMode ? '確認を終了する' : '研究を終了する'}
           </button>
+
+          {!isCheckMode && onRestart && (
+            <button
+              type="button"
+              onClick={onRestart}
+              style={{
+                background: 'var(--c-accent)',
+                border: 'none',
+                borderRadius: 0,
+                color: 'var(--c-dark)',
+                padding: '10px 18px',
+                fontFamily: 'Noto Sans JP, sans-serif',
+                fontSize: 12,
+                fontWeight: 400,
+                letterSpacing: '0.05em',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                transition: 'opacity 0.2s ease'
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.opacity = '0.85';
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.opacity = '1';
+              }}
+            >
+              もう一度研究に参加する
+            </button>
+          )}
 
           <button
             type="button"

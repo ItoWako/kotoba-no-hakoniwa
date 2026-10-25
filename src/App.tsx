@@ -156,6 +156,30 @@ export default function App() {
     transitionTimers.current.push(enterTimer);
   }, [archiveCheckMode, returnToWaiting, changeScreen, clearExperience, clearTransitionTimers]);
 
+  const handleRestart = useCallback(() => {
+    if (transitioning.current) return;
+    if (screenRef.current !== 'archive' && screenRef.current !== 'archive-detail') return;
+
+    clearTransitionTimers();
+    transitioning.current = true;
+    setOverlayColor('var(--c-bg)');
+    setOverlayVisible(true);
+
+    const enterTimer = setTimeout(() => {
+      clearExperience();
+      changeScreen('photo-selection');
+
+      const exitTimer = setTimeout(() => {
+        setOverlayVisible(false);
+        transitioning.current = false;
+      }, 400);
+
+      transitionTimers.current.push(exitTimer);
+    }, 400);
+
+    transitionTimers.current.push(enterTimer);
+  }, [changeScreen, clearExperience, clearTransitionTimers]);
+
   useEffect(() => {
     const timeoutMs = getIdleTimeout(screen);
     if (timeoutMs === null) return;
@@ -327,6 +351,7 @@ export default function App() {
       {screen === 'archive' && (
         <ArchiveScreen
           isCheckMode={archiveCheckMode}
+          onRestart={archiveCheckMode ? undefined : handleRestart}
           onPhotoSelect={(id) => {
             if (transitioning.current) return;
 
@@ -351,6 +376,7 @@ export default function App() {
       {screen === 'archive-detail' && archivePhotoId && (
         <ArchiveDetailScreen
           photoId={archivePhotoId}
+          onRestart={archiveCheckMode ? undefined : handleRestart}
           onBack={() => navigate('archive', 'var(--c-bg)', 300, 300)}
           onReset={handleReset}
           highlightReset={hasViewedOtherScene}

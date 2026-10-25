@@ -7,11 +7,12 @@ interface Props {
   photoId: string;
   onBack: () => void;
   onReset?: () => void;
+  onRestart?: () => void;
   onViewAll?: () => void;
   highlightReset?: boolean;
 }
 
-export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAll }: Props) {
+export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAll, onRestart }: Props) {
   const photo = ARCHIVE_PHOTOS.find((p) => p.id === photoId) ?? ARCHIVE_PHOTOS[0];
 
   const [entries, setEntries] = useState<SavedTanka[]>([]);
@@ -87,31 +88,61 @@ export default function ArchiveDetailScreen({ photoId, onBack, onReset, onViewAl
         }}
       >
         {!isOwnDetail && onReset && (
-          <button
-            onClick={onReset}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontFamily: 'Noto Sans JP, sans-serif',
-              fontSize: 11,
-              fontWeight: 300,
-              letterSpacing: '0.05em',
-              color: 'var(--c-muted)',
-              cursor: 'pointer',
-              padding: 0,
-              transition: 'color 0.25s ease, text-decoration 0.25s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--c-text)';
-              e.currentTarget.style.textDecoration = 'underline';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--c-muted)';
-              e.currentTarget.style.textDecoration = 'none';
-            }}
-          >
-            研究を終了する
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 24 }}>
+            <button
+              onClick={onReset}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                fontFamily: 'Noto Sans JP, sans-serif',
+                fontSize: 11,
+                fontWeight: 300,
+                letterSpacing: '0.05em',
+                color: 'var(--c-muted)',
+                cursor: 'pointer',
+                padding: 0,
+                transition: 'color 0.25s ease, text-decoration 0.25s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'var(--c-text)';
+                e.currentTarget.style.textDecoration = 'underline';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--c-muted)';
+                e.currentTarget.style.textDecoration = 'none';
+              }}
+            >
+              研究を終了する
+            </button>
+            {onRestart && (
+              <button
+                type="button"
+                onClick={onRestart}
+                style={{
+                  background: 'var(--c-accent)',
+                  border: 'none',
+                  borderRadius: 0,
+                  color: 'var(--c-dark)',
+                  padding: '10px 18px',
+                  fontFamily: 'Noto Sans JP, sans-serif',
+                  fontSize: 12,
+                  fontWeight: 400,
+                  letterSpacing: '0.05em',
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  transition: 'opacity 0.2s ease'
+                }}
+                onMouseEnter={(event) => {
+                  event.currentTarget.style.opacity = '0.85';
+                }}
+                onMouseLeave={(event) => {
+                  event.currentTarget.style.opacity = '1';
+                }}
+              >
+                もう一度研究に参加する
+              </button>
+            )}
+          </div>
         )}
       </div>
 
